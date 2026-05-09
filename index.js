@@ -134,15 +134,15 @@ function buildFfmpegArgs(clips, workDir, aspectRatio = "9:16") {
   };
 }
 
-async function submitFal(model, input) {
-  if (!FAL_KEY) {
+async function submitFal(model, input, falKey = FAL_KEY) {
+  if (!falKey) {
     throw new Error("FAL_KEY is required for voiceover generation");
   }
 
   const submitRes = await fetch(`https://queue.fal.run/${model}`, {
     method: "POST",
     headers: {
-      Authorization: `Key ${FAL_KEY}`,
+      Authorization: `Key ${falKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(input),
@@ -161,12 +161,12 @@ async function submitFal(model, input) {
   for (let i = 0; i < 90; i++) {
     await new Promise((resolve) => setTimeout(resolve, 2000));
     const pollRes = await fetch(statusUrl, {
-      headers: { Authorization: `Key ${FAL_KEY}` },
+      headers: { Authorization: `Key ${falKey}` },
     });
     const pollData = await pollRes.json().catch(() => ({}));
     if (pollData.status === "COMPLETED") {
       const resultRes = await fetch(responseUrl, {
-        headers: { Authorization: `Key ${FAL_KEY}` },
+        headers: { Authorization: `Key ${falKey}` },
       });
       const resultData = await resultRes.json().catch(() => ({}));
       if (!resultRes.ok) {
@@ -198,7 +198,7 @@ function pickAudioUrl(result) {
   );
 }
 
-async function generateVoiceoverAudio(voiceover, workDir) {
+async function generateVoiceoverAudio(voiceover, workDir, falKey = FAL_KEY) {
   const script = String(voiceover?.script ?? "").trim();
   if (!script) return null;
 
@@ -221,7 +221,7 @@ async function generateVoiceoverAudio(voiceover, workDir) {
       channel: "1",
     },
     output_format: "url",
-  });
+  }, falKey);
 
   const audioUrl = pickAudioUrl(result);
   if (!audioUrl) {
@@ -306,6 +306,7 @@ app.get("/health", (_req, res) => {
 
 app.post("/stitch", async (req, res) => {
   const { clips, voiceover, returnJson = false, aspectRatio = "9:16" } = req.body;
+  const requestFalKey = req.headers["x-fal-key"] || FAL_KEY;
 
   if (!Array.isArray(clips) || clips.length === 0) {
     return res.status(400).json({ error: "clips array required" });
@@ -357,7 +358,7 @@ app.post("/stitch", async (req, res) => {
     }
 
     if (voiceover?.script?.trim()) {
-      const voiceoverPath = await generateVoiceoverAudio(voiceover, workDir);
+      const voiceoverPath = await generateVoiceoverAudio(voiceover, workDir, requestFalKey);
       outputPath = await mixVoiceover(outputPath, voiceoverPath, voiceover.startMs ?? 0, workDir);
     }
 
